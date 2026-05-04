@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.sociality/sociality-mcp",
+  "title": "Sociality.io MCP",
+  "description": "Connect AI agents to Sociality.io social media intelligence for owned account analytics, competitor benchmarking, post insights, and reporting workflows.",
+  "version": "0.0.1",
+  "websiteUrl": "https://sociality.io/mcp",
+  "repository": {
+    "url": "https://github.com/socialityio/sociality-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.sociality.io/mcp"
+    }
+  ]
+}
