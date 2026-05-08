@@ -1,6 +1,6 @@
 # Sociality.io MCP
 
-Connect AI agents to Sociality.io social media intelligence through a remote Model Context Protocol server.
+Use Sociality.io’s social media MCP server to connect AI with social media intelligence, analytics, and insights.
 
 Sociality.io MCP gives MCP-compatible clients structured OAuth access to owned social account analytics, published content, public competitor intelligence, competitor benchmarking, post insights, and reporting workflows across Facebook, X, Instagram, YouTube, LinkedIn, and TikTok.
 
