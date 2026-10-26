@@ -25,8 +25,8 @@ Sociality.io MCP exposes social media account and social media competitor intell
 With owned social accounts, clients can:
 
 - List connected social accounts available to the authenticated user.
-- Fetch account-level analytics for selected metrics and date ranges.
-- Fetch published posts and stories for account-level analysis.
+- Fetch account-level analytics for a date range, aggregated by day, week, or month.
+- Fetch published posts and stories for account-level analysis, filtered by post type.
 - Compare owned account performance across platforms and periods.
 
 With competitor workflows, clients can:
@@ -57,12 +57,43 @@ For workflow planning and safety, clients can:
 | Tool | Access | Credit usage | Purpose |
 | --- | --- | --- | --- |
 | `social_accounts_list` | Read | Free | List social media accounts available to the authenticated user. |
-| `social_account_stats_list` | Read | Billable | Fetch owned account analytics for a date range and selected metrics. |
+| `social_account_stats_list` | Read | Billable | Fetch owned account analytics for a date range, aggregated by day, week, or month. |
 | `social_account_posts_list` | Read | Billable | Fetch published owned account posts and stories for a date range. |
 | `social_competitors_list` | Read | Free | List tracked competitors in the current workspace. |
 | `social_competitors_create` | Write | Free | Add a tracked competitor from a social profile URL. |
-| `social_competitor_stats_list` | Read | Billable | Fetch public competitor stats for a date range and selected metrics. |
+| `social_competitor_stats_list` | Read | Billable | Fetch public competitor stats for a date range, aggregated by day, week, or month. |
 | `social_competitor_posts_list` | Read | Billable | Fetch competitor published posts for a date range. |
+
+### Tool Parameters
+
+| Tool | Required | Optional |
+| --- | --- | --- |
+| `social_accounts_list` | — | `channel`, `name`, `page` |
+| `social_account_stats_list` | `account_id`, `since`, `until` | `period` (`day`, `week`, `month`; default `day`) |
+| `social_account_posts_list` | `account_id`, `since`, `until` | `type`, `order`, `limit` (1-50, default 50), `page` |
+| `social_competitors_list` | — | `channel`, `name`, `page` |
+| `social_competitors_create` | `url` | `timezone` (defaults to the workspace timezone) |
+| `social_competitor_stats_list` | `competitor_id`, `since`, `until` | `period` (`day`, `week`, `month`; default `day`) |
+| `social_competitor_posts_list` | `competitor_id`, `since`, `until` | `type`, `order`, `limit` (1-50, default 50), `page` |
+
+Dates use `YYYY-MM-DD`. `order` is `published_at_desc` (default) or `published_at_asc`.
+
+Stats tools return every cataloged metric available for the account or competitor's channel. Read `social_platform_capabilities` for metric names, descriptions, and aggregation behavior.
+
+### Post Types
+
+Owned account posts can be filtered by `status`, `photo`, `gif`, `video`, `link`, `album`, `carousel`, `story`, `reels`, `document`, `poll`, or `repost`. Facebook stories are not included in account posts.
+
+Competitor post types depend on the channel:
+
+| Channel | Competitor post types |
+| --- | --- |
+| Facebook | `status`, `photo`, `video`, `link`, `album` |
+| Instagram | `photo`, `video`, `carousel`, `reels` |
+| LinkedIn | `status`, `photo`, `video`, `link`, `document` |
+| TikTok | `video` |
+| X | `status`, `photo`, `video` |
+| YouTube | `video` |
 
 ## Supported Channels
 
@@ -156,14 +187,45 @@ After connecting a client, use this no-credit setup check before running larger 
 
 This is especially useful before recurring reporting, competitor benchmarking, internal copilot, or production agent workflows.
 
+## Action-Required Responses
+
+When a request can't be answered until the user does something in Sociality.io, tools return a normal result with an empty data block and an `action_required` object instead of a protocol error. Calls blocked this way never consume MCP credits.
+
+```json
+{
+  "action_required": {
+    "code": "credits_exhausted",
+    "message": "This workspace has used all of its MCP credits for the current period.",
+    "action": "Credits reset at the start of the next period. To continue before then, review the plan in Sociality.",
+    "link": "https://..."
+  }
+}
+```
+
+| Code | Meaning |
+| --- | --- |
+| `no_channels` | No social media accounts are connected yet. |
+| `no_competitors` | No competitors are tracked yet. |
+| `channel_token_expired` | The account connection has expired and must be reconnected. |
+| `credits_exhausted` | The workspace has used its MCP credits for the current period. |
+| `data_retention_limited` | `since` is earlier than the plan's data retention allows. The message includes the earliest date that can be requested. |
+| `page_limit_reached` | The workspace already tracks the number of pages its plan includes. |
+| `page_change_limit_reached` | The workspace has used its page changes for the current period. |
+
+Clients should show `message` to the user and point them to `link`. Retrying with different arguments won't help unless `action` says how to adjust the call, as it does for `data_retention_limited`.
+
 ## Credits, Limits, and Safety
 
 - Billable tools consume MCP credits based on returned rows.
 - Free setup and discovery tools do not consume MCP credits.
-- List tools return up to 50 rows per page.
-- Stats and posts tools return up to 50 rows per call.
+- List tools return up to 50 rows per page. Use `page` and check `pagination.has_more` for more results.
+- Posts tools return up to 50 posts per call. Use `limit` to request fewer and `page` to paginate.
+- Stats tools return up to 50 aggregated rows per call. Use `period` to keep long date ranges within that limit.
+- The earliest date that can be requested depends on the workspace plan's data retention.
+- Some platforms report metrics with a delay. This metric lag is an expected delay, not a cutoff: available data is returned through the requested date. Read `social_platform_capabilities` for lag details per channel.
+- If the user's current Sociality.io workspace is inactive, tools return a message asking them to check the workspace status in the dashboard.
 - Most current tools are read-only.
-- `social_competitors_create` is a write action and should only be used when the user explicitly wants to add a tracked competitor.
+- `social_competitors_create` is a write action and should only be used when the user explicitly wants to add a tracked competitor. It counts against the plan's page limit and page change limit.
 - MCP access follows the connected Sociality.io user and workspace permissions.
 - Use least-privilege Sociality.io accounts for production or automated workflows.
 
@@ -188,3 +250,5 @@ Registry server name:
 ```text
 io.sociality/sociality-mcp
 ```
+
+Current version: `1.0.0`. Registry versions can't be changed after publishing, so every listing update needs a new `version` in `server.json`. Keep it in sync with the version the server reports.
