@@ -1,6 +1,8 @@
 # Sociality.io MCP
 
-Use Sociality.io’s social media MCP server to connect AI with social media intelligence, analytics, and insights.
+Sociality MCP gives AI assistants such as Claude and ChatGPT the stats and posts of your own social accounts and of your competitors, across Instagram, Facebook, X, LinkedIn, TikTok and YouTube.
+
+It is a hosted remote MCP server (Streamable HTTP with OAuth), so there is nothing to install. It is listed in [Claude's connector directory](https://claude.ai/directory/sociality), as a [ChatGPT plugin](https://chatgpt.com/plugins/plugin_asdk_app_6a2fd66dea448191989fe9b347da2f36), and in the [Official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.sociality/sociality-mcp) as `io.sociality/sociality-mcp`.
 
 Sociality.io MCP gives MCP-compatible clients structured OAuth access to owned social account analytics, published content, public competitor intelligence, competitor benchmarking, post insights, and reporting workflows across Facebook, X, Instagram, YouTube, LinkedIn, and TikTok.
 
@@ -25,6 +27,7 @@ Sociality.io MCP exposes social media account and social media competitor intell
 With owned social accounts, clients can:
 
 - List connected social accounts available to the authenticated user.
+- Connect a new social account, or reconnect one whose access expired, through a one-time login link the user opens.
 - Fetch account-level analytics for a date range, aggregated by day, week, or month.
 - Fetch published posts and stories for account-level analysis, filtered by post type.
 - Compare owned account performance across platforms and periods.
@@ -57,6 +60,7 @@ For workflow planning and safety, clients can:
 | Tool | Access | Credit usage | Purpose |
 | --- | --- | --- | --- |
 | `social_accounts_list` | Read | Free | List social media accounts available to the authenticated user. |
+| `social_account_connect` | Write | Free | Connect a social account to the workspace, or reconnect one whose access expired, through a one-time login link. |
 | `social_account_stats_list` | Read | Billable | Fetch owned account analytics for a date range, aggregated by day, week, or month. |
 | `social_account_posts_list` | Read | Billable | Fetch published owned account posts and stories for a date range. |
 | `social_competitors_list` | Read | Free | List tracked competitors in the current workspace. |
@@ -69,6 +73,7 @@ For workflow planning and safety, clients can:
 | Tool | Required | Optional |
 | --- | --- | --- |
 | `social_accounts_list` | — | `channel`, `name`, `page` |
+| `social_account_connect` | `channel` | `connection_id` (pass it on the second call to read the result) |
 | `social_account_stats_list` | `account_id`, `since`, `until` | `period` (`day`, `week`, `month`; default `day`) |
 | `social_account_posts_list` | `account_id`, `since`, `until` | `type`, `order`, `limit` (1-50, default 50), `page` |
 | `social_competitors_list` | — | `channel`, `name`, `page` |
@@ -79,6 +84,15 @@ For workflow planning and safety, clients can:
 Dates use `YYYY-MM-DD`. `order` is `published_at_desc` (default) or `published_at_asc`.
 
 Stats tools return every cataloged metric available for the account or competitor's channel. Read `social_platform_capabilities` for metric names, descriptions, and aggregation behavior.
+
+### Connecting Accounts
+
+`social_account_connect` works in two calls:
+
+1. Call it with a `channel` (`facebook`, `x`, `instagram`, `youtube`, `linkedin` or `tiktok`). It returns a `connection_id`, `status: pending`, a one-time `authorization_url` and `expires_at`. Show the link to the user, who logs in on the platform and grants access. The link works once and expires after 10 minutes.
+2. When the user says they are done, call it again with the same `channel` and the `connection_id`. `status` becomes `connected` or `failed` (or `expired` if the link lapsed), with the saved `accounts` (use their `id` with the other tools) and, on failure, a `reason`: `authorization_denied`, `token_exchange_failed`, `not_authorized`, `authorization_url_failed`, `page_limit_reached` or `page_change_limit_reached`.
+
+Only workspace owners and admins can connect accounts. New accounts count against the plan's page allowance, and accounts already in the workspace get a fresh token. If the plan has no room for some or all of the granted accounts, `action_required` says which allowance ran out; a new link will not help until the plan changes. The response never contains an access token.
 
 ### Post Types
 
@@ -163,7 +177,9 @@ For Codex:
 codex mcp add --url https://api.sociality.io/mcp sociality
 ```
 
-If a client only supports stdio MCP servers, use a bridge such as `mcp-remote`:
+### Fallback for stdio-only clients
+
+Use the remote URL above whenever your client supports remote MCP servers. Only if a client supports stdio MCP servers and nothing else, use a bridge such as `mcp-remote`:
 
 ```json
 {
@@ -181,7 +197,7 @@ If a client only supports stdio MCP servers, use a bridge such as `mcp-remote`:
 After connecting a client, use this no-credit setup check before running larger workflows:
 
 1. Read `social_workspace_context` to confirm OAuth, active workspace, user context, and credit status.
-2. Call `social_accounts_list` and `social_competitors_list` to confirm accessible owned accounts and tracked competitors.
+2. Call `social_accounts_list` and `social_competitors_list` to confirm accessible owned accounts and tracked competitors. If no accounts are connected yet, a workspace owner or admin can connect one with `social_account_connect`.
 3. Read `social_platform_capabilities` to confirm supported channels, metrics, and aggregation behavior.
 4. Read `social_tools_catalog` to distinguish free tools, billable tools, read-only tools, and write actions.
 
@@ -204,9 +220,9 @@ When a request can't be answered until the user does something in Sociality.io, 
 
 | Code | Meaning |
 | --- | --- |
-| `no_channels` | No social media accounts are connected yet. |
+| `no_channels` | No social media accounts are connected yet. Connect one with `social_account_connect`, or in Sociality.io. |
 | `no_competitors` | No competitors are tracked yet. |
-| `channel_token_expired` | The account connection has expired and must be reconnected. |
+| `channel_token_expired` | The account connection has expired. Reconnect it with `social_account_connect`, or in Sociality.io. |
 | `credits_exhausted` | The workspace has used its MCP credits for the current period. |
 | `data_retention_limited` | `since` is earlier than the plan's data retention allows. The message includes the earliest date that can be requested. |
 | `page_limit_reached` | The workspace already tracks the number of pages its plan includes. |
@@ -224,7 +240,8 @@ Clients should show `message` to the user and point them to `link`. Retrying wit
 - The earliest date that can be requested depends on the workspace plan's data retention.
 - Some platforms report metrics with a delay. This metric lag is an expected delay, not a cutoff: available data is returned through the requested date. Read `social_platform_capabilities` for lag details per channel.
 - If the user's current Sociality.io workspace is inactive, tools return a message asking them to check the workspace status in the dashboard.
-- Most current tools are read-only.
+- Six of the eight tools are read-only. The two write actions are `social_account_connect` and `social_competitors_create`.
+- `social_account_connect` should only be used when the user wants to connect or reconnect a social account. Only workspace owners and admins can run it, new accounts count against the plan's page limit and page change limit, and the response never contains an access token.
 - `social_competitors_create` is a write action and should only be used when the user explicitly wants to add a tracked competitor. It counts against the plan's page limit and page change limit.
 - MCP access follows the connected Sociality.io user and workspace permissions.
 - Use least-privilege Sociality.io accounts for production or automated workflows.
@@ -251,4 +268,4 @@ Registry server name:
 io.sociality/sociality-mcp
 ```
 
-Current version: `1.0.0`. Registry versions can't be changed after publishing, so every listing update needs a new `version` in `server.json`. Keep it in sync with the version the server reports.
+Current version: `1.1.0`. Registry versions can't be changed after publishing, so every listing update needs a new `version` in `server.json`. Keep it in sync with the version the server reports.
